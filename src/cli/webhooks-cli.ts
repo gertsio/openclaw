@@ -1,4 +1,6 @@
 import type { Command } from "commander";
+import { runEmailMonitor } from "../email-monitor/monitor.js";
+import { buildEmailMonitorStatus } from "../email-monitor/status.js";
 import { danger } from "../globals.js";
 import {
   type GmailRunOptions,
@@ -103,6 +105,76 @@ export function registerWebhooksCli(program: Command) {
         defaultRuntime.exit(1);
       }
     });
+
+  gmail
+    .command("monitor")
+    .description("Run the structured urgent Gmail monitor")
+    .option("--account <email>", "Gmail account to check; repeat with comma-separated values")
+    .option("--accounts <emails>", "Comma-separated Gmail accounts to check")
+    .option("--state-dir <path>", "OpenClaw state directory override")
+    .option("--json", "Output JSON summary", true)
+    .action(async (opts) => {
+      try {
+        const accounts = parseAccountList(opts);
+        const result = await runEmailMonitor({
+          mode: "urgent",
+          accounts,
+          stateDir: normalizeOptionalString(opts.stateDir),
+        });
+        defaultRuntime.writeJson(result);
+        if (!result.ok) {
+          defaultRuntime.exit(1);
+        }
+      } catch (err) {
+        defaultRuntime.error(danger(String(err)));
+        defaultRuntime.exit(1);
+      }
+    });
+
+  gmail
+    .command("digest")
+    .description("Run the structured Gmail digest classifier")
+    .option("--account <email>", "Gmail account to check; repeat with comma-separated values")
+    .option("--accounts <emails>", "Comma-separated Gmail accounts to check")
+    .option("--state-dir <path>", "OpenClaw state directory override")
+    .option("--json", "Output JSON summary", true)
+    .action(async (opts) => {
+      try {
+        const accounts = parseAccountList(opts);
+        const result = await runEmailMonitor({
+          mode: "digest",
+          accounts,
+          stateDir: normalizeOptionalString(opts.stateDir),
+        });
+        defaultRuntime.writeJson(result);
+        if (!result.ok) {
+          defaultRuntime.exit(1);
+        }
+      } catch (err) {
+        defaultRuntime.error(danger(String(err)));
+        defaultRuntime.exit(1);
+      }
+    });
+
+  gmail
+    .command("status")
+    .description("Show structured Gmail monitor health from decision logs")
+    .option("--state-dir <path>", "OpenClaw state directory override")
+    .option("--json", "Output JSON summary", true)
+    .action(async (opts) => {
+      try {
+        const status = await buildEmailMonitorStatus({
+          stateDir: normalizeOptionalString(opts.stateDir),
+        });
+        defaultRuntime.writeJson(status);
+        if (!status.ok) {
+          defaultRuntime.exit(1);
+        }
+      } catch (err) {
+        defaultRuntime.error(danger(String(err)));
+        defaultRuntime.exit(1);
+      }
+    });
 }
 
 function parseGmailSetupOptions(raw: Record<string, unknown>): GmailSetupOptions {
@@ -187,4 +259,16 @@ function booleanOption(value: unknown): boolean | undefined {
     return undefined;
   }
   return Boolean(value);
+}
+
+function parseAccountList(raw: Record<string, unknown>): string[] {
+  const values = [normalizeOptionalString(raw.account), normalizeOptionalString(raw.accounts)]
+    .filter((value): value is string => Boolean(value))
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (values.length === 0) {
+    throw new Error("--account or --accounts is required");
+  }
+  return Array.from(new Set(values));
 }
